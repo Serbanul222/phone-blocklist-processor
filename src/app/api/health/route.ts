@@ -28,7 +28,7 @@ export async function GET() {
         pythonProcess.on('error', reject)
       })
       checks.checks.python = true
-    } catch (error) {
+    } catch {
       checks.checks.python = false
     }
 

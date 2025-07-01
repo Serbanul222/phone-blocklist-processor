@@ -26,36 +26,6 @@ export default function PhoneBlocklistProcessor() {
     { id: 4, title: 'Export', color: 'emerald' }
   ]
 
-  const handleFileUpload = useCallback(async (file: File) => {
-    setProcessingState('uploading')
-    
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      })
-      
-      if (!response.ok) throw new Error('Upload failed')
-      
-      const data = await response.json()
-      setFileData(data)
-      setCurrentStep(1)
-      setProcessingState('idle')
-    } catch (error) {
-      console.error('Upload error:', error)
-      setProcessingState('error')
-    }
-  }, [])
-
-  const handleColumnSelect = useCallback((column: string) => {
-    setSelectedColumn(column)
-    setCurrentStep(2)
-    handleProcessing(column)
-  }, [fileData])
-
   const handleProcessing = useCallback(async (column: string) => {
     if (!fileData) return
     
@@ -98,12 +68,42 @@ export default function PhoneBlocklistProcessor() {
       
     } catch (error) {
       console.error('Processing error:', error)
-      if (error.name === 'AbortError') {
+      if (error instanceof Error && error.name === 'AbortError') {
         console.error('Request timed out after 2 minutes')
       }
       setProcessingState('error')
     }
   }, [fileData])
+
+  const handleFileUpload = useCallback(async (file: File) => {
+    setProcessingState('uploading')
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (!response.ok) throw new Error('Upload failed')
+      
+      const data = await response.json()
+      setFileData(data)
+      setCurrentStep(1)
+      setProcessingState('idle')
+    } catch (error) {
+      console.error('Upload error:', error)
+      setProcessingState('error')
+    }
+  }, [])
+
+  const handleColumnSelect = useCallback((column: string) => {
+    setSelectedColumn(column)
+    setCurrentStep(2)
+    handleProcessing(column)
+  }, [handleProcessing])
 
   const handleExport = useCallback(() => {
     setCurrentStep(4)

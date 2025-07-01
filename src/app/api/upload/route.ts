@@ -8,6 +8,10 @@ import { v4 as uuidv4 } from 'uuid'
 import { parse } from 'csv-parse/sync'
 import * as XLSX from 'xlsx'
 
+interface DataRow {
+  [key: string]: string | number | boolean | null | undefined
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -52,7 +56,7 @@ export async function POST(request: NextRequest) {
     await writeFile(filePath, buffer)
 
     // Parse file to get column information
-    let data: any[] = []
+    let data: DataRow[] = []
     let columns: Array<{ name: string; sample: string[]; type: string }> = []
 
     if (file.name.toLowerCase().endsWith('.csv')) {
@@ -62,13 +66,13 @@ export async function POST(request: NextRequest) {
         columns: true,
         skip_empty_lines: true,
         auto_parse: false // Keep as strings for now
-      })
+      }) as DataRow[]
     } else {
       // Parse Excel
       const workbook = XLSX.read(buffer, { type: 'buffer' })
       const sheetName = workbook.SheetNames[0]
       const worksheet = workbook.Sheets[sheetName]
-      data = XLSX.utils.sheet_to_json(worksheet, { raw: false })
+      data = XLSX.utils.sheet_to_json(worksheet, { raw: false }) as DataRow[]
     }
 
     if (data.length === 0) {

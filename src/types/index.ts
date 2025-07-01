@@ -7,7 +7,7 @@ export interface FileData {
     type: string
   }>
   totalRows: number
-  preview: Record<string, any>[]
+  preview: Record<string, string | number | boolean | null | undefined>[]
 }
 
 export interface ProcessingStats {
@@ -44,7 +44,7 @@ export interface UploadResponse {
     type: string
   }>
   totalRows: number
-  preview: Record<string, any>[]
+  preview: Record<string, string | number | boolean | null | undefined>[]
   error?: string
 }
 

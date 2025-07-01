@@ -4,6 +4,16 @@ import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { existsSync } from 'fs'
 
+interface ProcessingStats {
+  total_rows: number
+  valid_numbers: number
+  blocked_numbers: number
+  final_rows: number
+  blocklist_size: number
+  processing_time: number
+  duplicates_removed?: number
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -57,7 +67,7 @@ export async function POST(request: NextRequest) {
     console.log('Starting Python execution at:', new Date().toISOString())
     const startTime = Date.now()
     
-    const stats = await new Promise<any>((resolve, reject) => {
+    const stats = await new Promise<ProcessingStats>((resolve, reject) => {
       const pythonProcess = spawn(pythonCommand, [
         pythonScriptPath,
         inputFilePath,
@@ -94,7 +104,7 @@ export async function POST(request: NextRequest) {
             })
             
             if (jsonLine) {
-              const stats = JSON.parse(jsonLine)
+              const stats = JSON.parse(jsonLine) as ProcessingStats
               console.log('Resolving with stats at:', Date.now() - startTime + 'ms')
               resolve(stats)
             } else {
@@ -134,7 +144,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Processing error:', error)
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to process file' },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to process file' },
       { status: 500 }
     )
   }

@@ -1,103 +1,202 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
+import React, { useState, useCallback } from 'react'
+import { Phone } from 'lucide-react'
+import StepIndicator from '@/components/StepIndicator'
+import FileUpload from '@/components/FileUpload'
+import ColumnSelector from '@/components/ColumnSelector'
+import ProcessingDashboard from '@/components/ProcessingDashboard'
+import ResultsView from '@/components/ResultsView'
+import ExportPanel from '@/components/ExportPanel'
+import { ProcessingState, FileData, ProcessingStats } from '@/types'
+
+export default function PhoneBlocklistProcessor() {
+  const [currentStep, setCurrentStep] = useState(0)
+  const [fileData, setFileData] = useState<FileData | null>(null)
+  const [selectedColumn, setSelectedColumn] = useState<string>('')
+  const [processingState, setProcessingState] = useState<ProcessingState>('idle')
+  const [processingStats, setProcessingStats] = useState<ProcessingStats | null>(null)
+  const [processedFileId, setProcessedFileId] = useState<string>('')
+
+  const steps = [
+    { id: 0, title: 'Upload File', color: 'blue' },
+    { id: 1, title: 'Select Column', color: 'purple' },
+    { id: 2, title: 'Processing', color: 'orange' },
+    { id: 3, title: 'Results', color: 'green' },
+    { id: 4, title: 'Export', color: 'emerald' }
+  ]
+
+  const handleFileUpload = useCallback(async (file: File) => {
+    setProcessingState('uploading')
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (!response.ok) throw new Error('Upload failed')
+      
+      const data = await response.json()
+      setFileData(data)
+      setCurrentStep(1)
+      setProcessingState('idle')
+    } catch (error) {
+      console.error('Upload error:', error)
+      setProcessingState('error')
+    }
+  }, [])
+
+  const handleColumnSelect = useCallback((column: string) => {
+    setSelectedColumn(column)
+    setCurrentStep(2)
+    handleProcessing(column)
+  }, [fileData])
+
+  const handleProcessing = useCallback(async (column: string) => {
+    if (!fileData) return
+    
+    setProcessingState('processing')
+    
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 120000) // 2 minutes timeout
+      
+      const response = await fetch('/api/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileId: fileData.fileId,
+          phoneColumn: column
+        }),
+        signal: controller.signal
+      })
+      
+      clearTimeout(timeoutId)
+      
+      console.log('Response status:', response.status)
+      console.log('Response ok:', response.ok)
+      
+      if (!response.ok) {
+        // Get the error details from the response
+        const errorData = await response.json()
+        console.error('API Error Details:', errorData)
+        throw new Error(`Processing failed: ${errorData.error || 'Unknown error'}`)
+      }
+      
+      const data = await response.json()
+      console.log('Success data:', data)
+      
+      // Immediately set the data and move to results
+      setProcessingStats(data.stats)
+      setProcessedFileId(data.processedFileId)
+      setCurrentStep(3)
+      setProcessingState('completed')
+      
+    } catch (error) {
+      console.error('Processing error:', error)
+      if (error.name === 'AbortError') {
+        console.error('Request timed out after 2 minutes')
+      }
+      setProcessingState('error')
+    }
+  }, [fileData])
+
+  const handleExport = useCallback(() => {
+    setCurrentStep(4)
+  }, [])
+
+  const handleReset = useCallback(() => {
+    setCurrentStep(0)
+    setFileData(null)
+    setSelectedColumn('')
+    setProcessingState('idle')
+    setProcessingStats(null)
+    setProcessedFileId('')
+  }, [])
+
+  const renderStep = () => {
+    switch(currentStep) {
+      case 0:
+        return (
+          <FileUpload 
+            onFileUpload={handleFileUpload}
+            isUploading={processingState === 'uploading'}
+            error={processingState === 'error'}
+          />
+        )
+      case 1:
+        return (
+          <ColumnSelector 
+            fileData={fileData}
+            selectedColumn={selectedColumn}
+            onColumnSelect={handleColumnSelect}
+            onBack={() => setCurrentStep(0)}
+          />
+        )
+      case 2:
+        return (
+          <ProcessingDashboard 
+            state={processingState}
+            stats={processingStats}
+            selectedColumn={selectedColumn}
+          />
+        )
+      case 3:
+        return (
+          <ResultsView 
+            stats={processingStats}
+            selectedColumn={selectedColumn}
+            onExport={handleExport}
+          />
+        )
+      case 4:
+        return (
+          <ExportPanel 
+            processedFileId={processedFileId}
+            stats={processingStats}
+            onReset={handleReset}
+          />
+        )
+      default:
+        return null
+    }
+  }
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex items-center">
+            <Phone className="w-8 h-8 text-blue-600 mr-3" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">
+                Phone Blocklist Processor
+              </h1>
+              <p className="text-gray-600">
+                Filter phone numbers against blocklist with real-time processing
+              </p>
+            </div>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <StepIndicator 
+          steps={steps}
+          currentStep={currentStep}
+          onStepClick={setCurrentStep}
+        />
+        
+        <div className="mt-8">
+          {renderStep()}
+        </div>
+      </div>
     </div>
-  );
+  )
 }

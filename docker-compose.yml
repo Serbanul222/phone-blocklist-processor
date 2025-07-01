@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  phone-blocklist-app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: phone-blocklist-processor
+    restart: unless-stopped
+    ports:
+      - "8090:3000"
+    environment:
+      - NODE_ENV=production
+      - API_URL=https://api.sendsms.ro/json?action=blocklist_get&username=lensa&password=FrIpredgrggtsd0b8-h08v74gmrdbgjk4h6d1o__xevjetzb
+      - UPLOAD_MAX_SIZE=52428800
+      - TZ=Europe/Bucharest
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    networks:
+      - phone-processor-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  phone-processor-network:
+    driver: bridge
+
+volumes:
+  uploads:
+  logs:

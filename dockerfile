@@ -7,19 +7,32 @@ RUN apk add --no-cache \
     py3-pip \
     python3-dev \
     build-base \
+    gcc \
+    musl-dev \
+    linux-headers \
     && ln -sf python3 /usr/bin/python
 
-# Build stage
+# Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
 
-# Application build stage
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies with specific npm version and clean cache
+RUN npm ci --only=production --legacy-peer-deps && npm cache clean --force
+
+# Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install all dependencies including devDependencies
+RUN npm ci --legacy-peer-deps
+
+# Copy source code
 COPY . .
 
 # Create necessary directories
@@ -29,16 +42,21 @@ RUN mkdir -p uploads python_scripts
 COPY requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Build the Next.js application
+# Disable telemetry during build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+
+# Build the application
 RUN npm run build
 
-# Production stage
+# Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
 
-# Create non-root user for security
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Create a non-root user
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
@@ -46,12 +64,13 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copy built application
+# Copy the built application
 COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
-# Copy built Next.js application
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
@@ -59,19 +78,18 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/python_scripts ./python_scripts
 
 # Create uploads directory with proper permissions
-RUN mkdir -p uploads && chown nextjs:nodejs uploads
-
-# Set environment variables
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
+RUN mkdir -p uploads logs && \
+    chown nextjs:nodejs uploads logs && \
+    chmod 755 uploads logs
 
 # Switch to non-root user
 USER nextjs
 
 # Expose port
 EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

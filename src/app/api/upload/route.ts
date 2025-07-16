@@ -12,6 +12,86 @@ interface DataRow {
   [key: string]: string | number | boolean | null | undefined
 }
 
+function removeBOM(buffer: Buffer): Buffer {
+  // Check for UTF-8 BOM (EF BB BF)
+  if (buffer.length >= 3 && 
+      buffer[0] === 0xEF && 
+      buffer[1] === 0xBB && 
+      buffer[2] === 0xBF) {
+    return buffer.slice(3)
+  }
+  
+  // Check for UTF-16 LE BOM (FF FE)
+  if (buffer.length >= 2 && 
+      buffer[0] === 0xFF && 
+      buffer[1] === 0xFE) {
+    return buffer.slice(2)
+  }
+  
+  // Check for UTF-16 BE BOM (FE FF)
+  if (buffer.length >= 2 && 
+      buffer[0] === 0xFE && 
+      buffer[1] === 0xFF) {
+    return buffer.slice(2)
+  }
+  
+  return buffer
+}
+
+function parseCSVSafely(buffer: Buffer): DataRow[] {
+  // Remove BOM if present
+  const cleanBuffer = removeBOM(buffer)
+  let csvContent = cleanBuffer.toString('utf-8')
+  
+  // Remove any remaining BOM characters from the string
+  csvContent = csvContent.replace(/^\uFEFF/, '')
+  
+  // Try different parsing strategies
+  const strategies = [
+    // Strategy 1: Standard parsing
+    {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      quote: '"',
+      escape: '"'
+    },
+    // Strategy 2: More relaxed parsing
+    {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      quote: '"',
+      escape: '"',
+      relax_quotes: true,
+      relax_column_count: true
+    },
+    // Strategy 3: Very permissive
+    {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      quote: false, // Disable quote handling
+      relax_quotes: true,
+      relax_column_count: true
+    }
+  ]
+  
+  for (const strategy of strategies) {
+    try {
+      const data = parse(csvContent, strategy) as DataRow[]
+      if (data.length > 0 && Object.keys(data[0]).length > 0) {
+        return data
+      }
+    } catch (error) {
+      console.warn('CSV parse strategy failed:', error)
+      continue
+    }
+  }
+  
+  throw new Error('All CSV parsing strategies failed')
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -60,19 +140,33 @@ export async function POST(request: NextRequest) {
     let columns: Array<{ name: string; sample: string[]; type: string }> = []
 
     if (file.name.toLowerCase().endsWith('.csv')) {
-      // Parse CSV
-      const csvContent = buffer.toString('utf-8')
-      data = parse(csvContent, {
-        columns: true,
-        skip_empty_lines: true,
-        auto_parse: false // Keep as strings for now
-      }) as DataRow[]
+      // Use enhanced CSV parser with BOM handling
+      console.log('Parsing CSV with BOM handling...')
+      try {
+        data = parseCSVSafely(buffer)
+        console.log('CSV parsed successfully with BOM handling')
+      } catch (error) {
+        console.error('Enhanced CSV parsing failed:', error)
+        return NextResponse.json(
+          { success: false, error: `CSV parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}` },
+          { status: 400 }
+        )
+      }
     } else {
       // Parse Excel
-      const workbook = XLSX.read(buffer, { type: 'buffer' })
-      const sheetName = workbook.SheetNames[0]
-      const worksheet = workbook.Sheets[sheetName]
-      data = XLSX.utils.sheet_to_json(worksheet, { raw: false }) as DataRow[]
+      console.log('Parsing Excel file...')
+      try {
+        const workbook = XLSX.read(buffer, { type: 'buffer' })
+        const sheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[sheetName]
+        data = XLSX.utils.sheet_to_json(worksheet, { raw: false }) as DataRow[]
+      } catch (error) {
+        console.error('Excel parsing failed:', error)
+        return NextResponse.json(
+          { success: false, error: 'Failed to parse Excel file' },
+          { status: 400 }
+        )
+      }
     }
 
     if (data.length === 0) {
@@ -81,6 +175,19 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Clean column names (remove any remaining BOM characters)
+    const cleanedData = data.map(row => {
+      const cleanedRow: DataRow = {}
+      Object.keys(row).forEach(key => {
+        const cleanKey = key.replace(/^\uFEFF/, '').trim()
+        cleanedRow[cleanKey] = row[key]
+      })
+      return cleanedRow
+    })
+
+    // Update data with cleaned column names
+    data = cleanedData
 
     // Analyze columns
     const sampleSize = Math.min(5, data.length)
@@ -116,6 +223,8 @@ export async function POST(request: NextRequest) {
       totalRows: data.length,
       preview
     }
+
+    console.log(`File uploaded successfully: ${file.name} (${data.length} rows)`)
 
     return NextResponse.json(response)
 

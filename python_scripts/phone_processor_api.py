@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Phone Number Blocklist Processor (API Version - Modified)
-Modified version to output only "telefon" column with filtered numbers.
+Phone Number Blocklist Processor (API Version - Fixed)
+Fixed CSV parsing to handle UTF-8 BOM and quote issues.
 """
 
 import pandas as pd
@@ -115,26 +115,23 @@ class PhoneBlocklistProcessor:
             if path.suffix.lower() in ['.xlsx', '.xls']:
                 df = pd.read_excel(file_path)
             elif path.suffix.lower() == '.csv':
-                # Try different encodings and separators for CSV files
-                encodings = ['utf-8-sig', 'utf-8', 'latin1', 'cp1252']  # utf-8-sig handles BOM
-                separators = [',', ';', '\t']
-                
-                df = None
-                for encoding in encodings:
-                    for sep in separators:
-                        try:
-                            df = pd.read_csv(file_path, encoding=encoding, sep=sep, on_bad_lines='warn')
-                            if len(df.columns) > 0:  # Successfully parsed
-                                self.log(f"✓ Successfully parsed CSV with encoding: {encoding}, separator: '{sep}'")
-                                break
-                        except Exception:
-                            continue
-                    if df is not None and len(df.columns) > 0:
-                        break
-                
-                if df is None:
-                    # Fallback to basic CSV reading
-                    df = pd.read_csv(file_path, on_bad_lines='warn', engine='python')
+                # Fixed CSV reading to handle BOM and quote issues
+                try:
+                    # First try: UTF-8 with BOM signature + proper quote handling
+                    df = pd.read_csv(file_path, encoding='utf-8-sig', engine='python', 
+                                   quoting=1, on_bad_lines='warn')
+                    self.log(f"✓ Successfully parsed CSV with UTF-8-sig encoding")
+                except Exception:
+                    try:
+                        # Second try: More permissive parsing
+                        df = pd.read_csv(file_path, encoding='utf-8-sig', engine='python',
+                                       sep=None, quoting=3, on_bad_lines='warn')
+                        self.log(f"✓ Successfully parsed CSV with flexible parsing")
+                    except Exception:
+                        # Fallback: Basic parsing
+                        df = pd.read_csv(file_path, encoding='utf-8', engine='python',
+                                       on_bad_lines='skip', quoting=3)
+                        self.log(f"✓ Parsed CSV with basic fallback")
             else:
                 self.log(f"Error: Unsupported file format '{path.suffix}'. Please use CSV or Excel.")
                 return None
@@ -272,7 +269,6 @@ def main():
     if matched_column is None:
         processor.log(f"Error: Column '{args.phone_column}' not found in file.")
         processor.log(f"Available columns: {available_columns}")
-        processor.log(f"Cleaned phone column name: '{phone_column_clean}'")
         sys.exit(1)
     
     processor.log(f"✓ Using column: '{matched_column}' (requested: '{args.phone_column}')")

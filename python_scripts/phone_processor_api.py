@@ -115,23 +115,38 @@ class PhoneBlocklistProcessor:
             if path.suffix.lower() in ['.xlsx', '.xls']:
                 df = pd.read_excel(file_path)
             elif path.suffix.lower() == '.csv':
-                # Fixed CSV reading to handle BOM and quote issues
-                try:
-                    # First try: UTF-8 with BOM signature + proper quote handling
-                    df = pd.read_csv(file_path, encoding='utf-8-sig', engine='python', 
-                                   quoting=1, on_bad_lines='warn')
-                    self.log(f"✓ Successfully parsed CSV with UTF-8-sig encoding")
-                except Exception:
+                # Enhanced CSV reading to handle various BOM types and quote issues
+                encodings_to_try = [
+                    'utf-8-sig',    # UTF-8 with BOM (EF BB BF)
+                    'utf-16',       # UTF-16 with BOM (FF FE or FE FF) 
+                    'utf-8',        # Plain UTF-8
+                    'latin1',       # Windows-1252/ISO-8859-1
+                    'cp1252'        # Windows code page
+                ]
+                
+                df = None
+                for encoding in encodings_to_try:
                     try:
-                        # Second try: More permissive parsing
-                        df = pd.read_csv(file_path, encoding='utf-8-sig', engine='python',
-                                       sep=None, quoting=3, on_bad_lines='warn')
-                        self.log(f"✓ Successfully parsed CSV with flexible parsing")
+                        # Try with proper quote handling
+                        df = pd.read_csv(file_path, encoding=encoding, engine='python', 
+                                       quoting=1, on_bad_lines='warn')
+                        self.log(f"✓ Successfully parsed CSV with {encoding} encoding")
+                        break
                     except Exception:
-                        # Fallback: Basic parsing
-                        df = pd.read_csv(file_path, encoding='utf-8', engine='python',
-                                       on_bad_lines='skip', quoting=3)
-                        self.log(f"✓ Parsed CSV with basic fallback")
+                        try:
+                            # Try with more permissive parsing
+                            df = pd.read_csv(file_path, encoding=encoding, engine='python',
+                                           sep=None, quoting=3, on_bad_lines='warn')
+                            self.log(f"✓ Successfully parsed CSV with {encoding} (flexible)")
+                            break
+                        except Exception:
+                            continue
+                
+                if df is None:
+                    # Final fallback: Very basic parsing
+                    df = pd.read_csv(file_path, encoding='utf-8', engine='python',
+                                   on_bad_lines='skip', quoting=3, encoding_errors='replace')
+                    self.log(f"✓ Parsed CSV with fallback (some characters may be replaced)")
             else:
                 self.log(f"Error: Unsupported file format '{path.suffix}'. Please use CSV or Excel.")
                 return None

@@ -221,29 +221,44 @@ class PhoneBlocklistProcessor:
         
         try:
             if Path(output_path).suffix.lower() == '.xlsx':
-                with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                # Ensure proper binary Excel file creation
+                with pd.ExcelWriter(output_path, engine='openpyxl', mode='w') as writer:
                     # Write data to Excel
                     df.to_excel(writer, index=False, sheet_name='Telefon_Filtered')
 
-                    # Format the telefon column as text
+                    # Format the telefon column as text to preserve phone numbers
                     worksheet = writer.sheets['Telefon_Filtered']
                     try:
                         col_idx = df.columns.get_loc('telefon') + 1
                         col_letter = get_column_letter(col_idx)
                         worksheet.column_dimensions[col_letter].number_format = '@'
-                        worksheet.column_dimensions[col_letter].auto_size = True
+                        worksheet.column_dimensions[col_letter].width = 20
                         self.log(f"   ✓ Applied text formatting to column '{col_letter}' to preserve phone numbers.")
-                    except KeyError:
-                        self.log("   Warning: 'telefon' column formatting skipped.")
+                    except (KeyError, Exception) as e:
+                        self.log(f"   Warning: 'telefon' column formatting skipped: {e}")
+                
+                # Verify file was created properly
+                if not Path(output_path).exists():
+                    raise Exception("Excel file was not created")
+                    
+                file_size = Path(output_path).stat().st_size
+                if file_size == 0:
+                    raise Exception("Excel file is empty")
+                    
+                self.log(f"   ✓ Excel file created successfully ({file_size} bytes)")
+                
             else:
-                # CSV export
-                df.to_csv(output_path, index=False, encoding='utf-8')
+                # CSV export with proper encoding
+                df.to_csv(output_path, index=False, encoding='utf-8-sig')
         
             self.log("✓ Export complete.")
             return True
         
         except Exception as e:
             self.log(f"Error exporting file: {e}")
+            import traceback
+            if not self.json_output:
+                traceback.print_exc()
             return False
 
 def main():

@@ -29,24 +29,28 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Read file
+    // Read file as buffer (binary data)
     const fileBuffer = await readFile(filePath)
     const fileStats = await stat(filePath)
 
-    // Set appropriate headers
+    // Create proper headers for binary file download
     const headers = new Headers()
     
     if (format === 'csv') {
-      headers.set('Content-Type', 'text/csv')
+      headers.set('Content-Type', 'text/csv; charset=utf-8')
       headers.set('Content-Disposition', 'attachment; filename="filtered_phone_numbers.csv"')
     } else {
+      // Critical: Use the exact MIME type for Excel files
       headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       headers.set('Content-Disposition', 'attachment; filename="filtered_phone_numbers.xlsx"')
     }
     
     headers.set('Content-Length', fileStats.size.toString())
-    headers.set('Cache-Control', 'no-cache')
-
+    headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+    headers.set('Pragma', 'no-cache')
+    headers.set('Expires', '0')
+    
+    // Critical: Return the buffer directly as ArrayBuffer for binary data
     return new NextResponse(fileBuffer, {
       status: 200,
       headers

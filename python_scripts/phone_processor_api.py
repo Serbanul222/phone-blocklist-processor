@@ -2,6 +2,7 @@
 """
 Phone Number Blocklist Processor (API Version - Fixed)
 Fixed CSV parsing to handle UTF-8 BOM and quote issues.
+Enhanced with dual format export (CSV + Excel).
 """
 
 import pandas as pd
@@ -216,41 +217,94 @@ class PhoneBlocklistProcessor:
         return output_df
 
     def export_file(self, df: pd.DataFrame, output_path: str) -> bool:
-        """Export the DataFrame with phone numbers in 'telefon' column."""
+        """Export the DataFrame with phone numbers in 'telefon' column - creates both CSV and Excel."""
         self.log(f"\n💾 Exporting {len(df):,} unique phone numbers to {output_path}...")
         
         try:
-            if Path(output_path).suffix.lower() == '.xlsx':
-                # Ensure proper binary Excel file creation
-                with pd.ExcelWriter(output_path, engine='openpyxl', mode='w') as writer:
-                    # Write data to Excel
-                    df.to_excel(writer, index=False, sheet_name='Telefon_Filtered')
-
-                    # Format the telefon column as text to preserve phone numbers
-                    worksheet = writer.sheets['Telefon_Filtered']
-                    try:
-                        col_idx = df.columns.get_loc('telefon') + 1
-                        col_letter = get_column_letter(col_idx)
-                        worksheet.column_dimensions[col_letter].number_format = '@'
-                        worksheet.column_dimensions[col_letter].width = 20
-                        self.log(f"   ✓ Applied text formatting to column '{col_letter}' to preserve phone numbers.")
-                    except (KeyError, Exception) as e:
-                        self.log(f"   Warning: 'telefon' column formatting skipped: {e}")
-                
-                # Verify file was created properly
-                if not Path(output_path).exists():
-                    raise Exception("Excel file was not created")
+            # Always create both CSV and Excel versions
+            base_path = str(Path(output_path).with_suffix(''))
+            csv_path = f"{base_path}.csv"
+            xlsx_path = f"{base_path}.xlsx"
+            
+            # 1. Create CSV first (most reliable)
+            df.to_csv(csv_path, index=False, encoding='utf-8', lineterminator='\n')
+            
+            # Verify CSV was created
+            if not Path(csv_path).exists() or Path(csv_path).stat().st_size == 0:
+                raise Exception("CSV file creation failed")
+            
+            csv_size = Path(csv_path).stat().st_size
+            self.log(f"   ✓ CSV file created successfully ({csv_size} bytes)")
+            
+            # 2. Create Excel version using a more robust method
+            try:
+                # Method 1: Try with xlsxwriter (more reliable than openpyxl for simple data)
+                try:
+                    import xlsxwriter
                     
-                file_size = Path(output_path).stat().st_size
-                if file_size == 0:
-                    raise Exception("Excel file is empty")
+                    workbook = xlsxwriter.Workbook(xlsx_path, {'strings_to_numbers': False})
+                    worksheet = workbook.add_worksheet('Telefon_Filtered')
                     
-                self.log(f"   ✓ Excel file created successfully ({file_size} bytes)")
+                    # Define text format for phone numbers
+                    text_format = workbook.add_format({'num_format': '@'})
+                    
+                    # Write header
+                    worksheet.write(0, 0, 'telefon')
+                    
+                    # Write data with text formatting
+                    for row_idx, phone in enumerate(df['telefon'].values, 1):
+                        worksheet.write(row_idx, 0, str(phone), text_format)
+                    
+                    # Set column width
+                    worksheet.set_column(0, 0, 20)
+                    
+                    workbook.close()
+                    
+                    self.log(f"   ✓ Excel file created with xlsxwriter")
+                    
+                except ImportError:
+                    # Method 2: Fallback to openpyxl with better settings
+                    from openpyxl import Workbook
+                    from openpyxl.styles import NamedStyle
+                    from openpyxl.utils import get_column_letter
+                    
+                    wb = Workbook()
+                    ws = wb.active
+                    ws.title = "Telefon_Filtered"
+                    
+                    # Write header
+                    ws['A1'] = 'telefon'
+                    
+                    # Write phone numbers as text
+                    for row_idx, phone in enumerate(df['telefon'].values, 2):
+                        cell = ws.cell(row=row_idx, column=1, value=str(phone))
+                        cell.number_format = '@'  # Force text format
+                        cell.data_type = 's'  # String data type
+                    
+                    # Set column width and format
+                    ws.column_dimensions['A'].width = 20
+                    
+                    # Save with specific options
+                    wb.save(xlsx_path)
+                    wb.close()
+                    
+                    self.log(f"   ✓ Excel file created with openpyxl")
                 
-            else:
-                # CSV export with proper encoding
-                df.to_csv(output_path, index=False, encoding='utf-8-sig')
-        
+                # Verify Excel file was created
+                if Path(xlsx_path).exists() and Path(xlsx_path).stat().st_size > 0:
+                    xlsx_size = Path(xlsx_path).stat().st_size
+                    self.log(f"   ✓ Excel file verified ({xlsx_size} bytes)")
+                else:
+                    raise Exception("Excel file verification failed")
+                    
+            except Exception as excel_error:
+                self.log(f"   ⚠️ Excel creation failed: {excel_error}")
+                # If Excel fails, just keep the CSV
+                if Path(xlsx_path).exists():
+                    Path(xlsx_path).unlink()  # Remove partial/corrupt file
+                self.log(f"   ✓ CSV file still available as fallback")
+            
+            # Always return True if at least CSV was created
             self.log("✓ Export complete.")
             return True
         

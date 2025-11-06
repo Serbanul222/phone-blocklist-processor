@@ -1,11 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Enable standalone output for Docker
-  output: 'standalone',
-  
-  experimental: {
-    serverComponentsExternalPackages: ['xlsx']
-  },
+  // Move serverComponentsExternalPackages to top level
+  serverExternalPackages: ['xlsx'],
   
   webpack: (config) => {
     config.externals.push({

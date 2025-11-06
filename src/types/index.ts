@@ -18,6 +18,8 @@ export interface ProcessingStats {
   blocklistSize: number
   processingTime: number
   duplicatesRemoved: number
+  outputFormat?: 'single' | 'zip'
+  outputFiles?: { csv?: string; xlsx?: string }
 }
 
 export type ProcessingState = 

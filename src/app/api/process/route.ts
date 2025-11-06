@@ -156,7 +156,9 @@ export async function POST(request: NextRequest) {
         finalRows: stats.final_rows,
         blocklistSize: stats.blocklist_size,
         processingTime: stats.processing_time,
-        duplicatesRemoved: stats.duplicates_removed || 0
+        duplicatesRemoved: stats.duplicates_removed || 0,
+        outputFormat: stats.output_format,
+        outputFiles: stats.output_files
       },
       processedFileId
     }

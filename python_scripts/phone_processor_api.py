@@ -255,8 +255,9 @@ class PhoneBlocklistProcessor:
                 # --- Create CSV Zip ---
                 self.log(f"   Creating CSV zip: {zip_path_csv}")
                 with zipfile.ZipFile(zip_path_csv, 'w', zipfile.ZIP_DEFLATED) as zipf_csv:
-                    for i, (start, end) in enumerate(range(0, len(final_df), split_size)):
-                        df_chunk = final_df.iloc[start:end + split_size]
+                    for i, start in enumerate(range(0, len(final_df), split_size)):
+                        end = min(start + split_size, len(final_df))
+                        df_chunk = final_df.iloc[start:end]
                         part_num = i + 1
                         chunk_csv_name = f"filtered_part_{part_num}.csv"
                         self.log(f"     ...writing {chunk_csv_name} ({len(df_chunk):,} rows)")
@@ -266,8 +267,9 @@ class PhoneBlocklistProcessor:
                 # --- Create Excel Zip ---
                 self.log(f"   Creating Excel zip: {zip_path_xlsx}")
                 with zipfile.ZipFile(zip_path_xlsx, 'w', zipfile.ZIP_DEFLATED) as zipf_xlsx:
-                    for i, (start, end) in enumerate(range(0, len(final_df), split_size)):
-                        df_chunk = final_df.iloc[start:end + split_size]
+                    for i, start in enumerate(range(0, len(final_df), split_size)):
+                        end = min(start + split_size, len(final_df))
+                        df_chunk = final_df.iloc[start:end]
                         part_num = i + 1
                         chunk_xlsx_name = f"filtered_part_{part_num}.xlsx"
                         self.log(f"     ...writing {chunk_xlsx_name} ({len(df_chunk):,} rows)")
@@ -299,10 +301,12 @@ class PhoneBlocklistProcessor:
 
                 # 2. Create Excel
                 try:
-
-                    with pd.ExcelWriter(xlsx_path, engine='xlsxwriter',
-                                        options={'strings_to_numbers': False}) as writer:
+                    with pd.ExcelWriter(xlsx_path, engine='xlsxwriter') as writer:
                         final_df.to_excel(writer, sheet_name='Telefon_Filtered', index=False)
+                        # Format telefon column as text to prevent Excel auto-conversion
+                        worksheet = writer.sheets['Telefon_Filtered']
+                        text_format = writer.book.add_format({'num_format': '@'})
+                        worksheet.set_column('A:A', 18, text_format)
                     self.log(f"   ✓ Excel file created: {xlsx_path}")
                 except ImportError:
                     # Fallback to openpyxl

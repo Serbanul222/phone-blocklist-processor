@@ -1,3 +1,4 @@
+// src/app/page.tsx
 'use client'
 
 import React, { useState, useCallback } from 'react'
@@ -17,6 +18,11 @@ export default function PhoneBlocklistProcessor() {
   const [processingState, setProcessingState] = useState<ProcessingState>('idle')
   const [processingStats, setProcessingStats] = useState<ProcessingStats | null>(null)
   const [processedFileId, setProcessedFileId] = useState<string>('')
+  
+  // --- ADDED STATE ---
+  const [stripPlus, setStripPlus] = useState(false)
+  const [splitFiles, setSplitFiles] = useState(false)
+  // --- END ADDED STATE ---
 
   const steps = [
     { id: 0, title: 'Upload File', color: 'blue' },
@@ -40,7 +46,11 @@ export default function PhoneBlocklistProcessor() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fileId: fileData.fileId,
-          phoneColumn: column
+          phoneColumn: column,
+          // --- PASS NEW OPTIONS ---
+          stripPlus: stripPlus,
+          splitFiles: splitFiles
+          // --- END PASS NEW OPTIONS ---
         }),
         signal: controller.signal
       })
@@ -73,7 +83,10 @@ export default function PhoneBlocklistProcessor() {
       }
       setProcessingState('error')
     }
-  }, [fileData])
+    // --- MODIFIED DEPENDENCY ARRAY ---
+  }, [fileData, stripPlus, splitFiles])
+  // --- END MODIFIED DEPENDENCY ARRAY ---
+
 
   const handleFileUpload = useCallback(async (file: File) => {
     setProcessingState('uploading')
@@ -116,6 +129,10 @@ export default function PhoneBlocklistProcessor() {
     setProcessingState('idle')
     setProcessingStats(null)
     setProcessedFileId('')
+    // --- RESET NEW STATE ---
+    setStripPlus(false)
+    setSplitFiles(false)
+    // --- END RESET NEW STATE ---
   }, [])
 
   const renderStep = () => {
@@ -135,6 +152,12 @@ export default function PhoneBlocklistProcessor() {
             selectedColumn={selectedColumn}
             onColumnSelect={handleColumnSelect}
             onBack={() => setCurrentStep(0)}
+            // --- PASS STATE AND SETTERS ---
+            stripPlus={stripPlus}
+            onStripPlusChange={setStripPlus}
+            splitFiles={splitFiles}
+            onSplitFilesChange={setSplitFiles}
+            // --- END PASS STATE AND SETTERS ---
           />
         )
       case 2:

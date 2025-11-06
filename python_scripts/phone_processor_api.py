@@ -3,6 +3,7 @@
 Phone Number Blocklist Processor (API Version - Fixed)
 Fixed CSV parsing to handle UTF-8 BOM and quote issues.
 Enhanced with dual format export (CSV + Excel).
+NEW: Added splitting and plus-stripping options.
 """
 
 import pandas as pd
@@ -16,6 +17,9 @@ from pathlib import Path
 from typing import Optional, Set
 from tqdm import tqdm
 from openpyxl.utils import get_column_letter
+import zipfile
+import io  # Required for in-memory zipping
+import xlsxwriter
 
 def normalize_phone_number(phone) -> Optional[str]:
     """
@@ -216,111 +220,116 @@ class PhoneBlocklistProcessor:
 
         return output_df
 
-    def export_file(self, df: pd.DataFrame, output_path: str) -> bool:
-        """Export the DataFrame with phone numbers in 'telefon' column - creates both CSV and Excel."""
-        self.log(f"\n💾 Exporting {len(df):,} unique phone numbers to {output_path}...")
+    # --- MODIFIED EXPORT FUNCTION ---
+    def export_file(self, df: pd.DataFrame, output_path: str, strip_plus: bool, split_size: int) -> bool:
+        """
+        Export the DataFrame.
+        - If split_size > 0, creates .zip files with chunks.
+        - If split_size == 0, creates single .csv and .xlsx files.
+        - If strip_plus is True, removes '+' from 'telefon' column.
+        """
+        self.log(f"\n💾 Exporting {len(df):,} unique phone numbers...")
         
+        base_path = str(Path(output_path).with_suffix(''))
+        
+        # Create a copy to avoid modifying the original DataFrame
+        final_df = df.copy()
+        
+        if strip_plus:
+            self.log("   Stripping '+' from phone numbers.")
+            final_df['telefon'] = final_df['telefon'].str.replace('+', '', regex=False)
+
         try:
-            # Always create both CSV and Excel versions
-            base_path = str(Path(output_path).with_suffix(''))
-            csv_path = f"{base_path}.csv"
-            xlsx_path = f"{base_path}.xlsx"
-            
-            # 1. Create CSV first (most reliable)
-            df.to_csv(csv_path, index=False, encoding='utf-8', lineterminator='\n')
-            
-            # Verify CSV was created
-            if not Path(csv_path).exists() or Path(csv_path).stat().st_size == 0:
-                raise Exception("CSV file creation failed")
-            
-            csv_size = Path(csv_path).stat().st_size
-            self.log(f"   ✓ CSV file created successfully ({csv_size} bytes)")
-            
-            # 2. Create Excel version using a more robust method
-            try:
-                # Method 1: Try with xlsxwriter (more reliable than openpyxl for simple data)
-                try:
-                    import xlsxwriter
-                    
-                    workbook = xlsxwriter.Workbook(xlsx_path, {'strings_to_numbers': False})
-                    worksheet = workbook.add_worksheet('Telefon_Filtered')
-                    
-                    # Define text format for phone numbers
-                    text_format = workbook.add_format({'num_format': '@'})
-                    
-                    # Write header
-                    worksheet.write(0, 0, 'telefon')
-                    
-                    # Write data with text formatting
-                    for row_idx, phone in enumerate(df['telefon'].values, 1):
-                        worksheet.write(row_idx, 0, str(phone), text_format)
-                    
-                    # Set column width
-                    worksheet.set_column(0, 0, 20)
-                    
-                    workbook.close()
-                    
-                    self.log(f"   ✓ Excel file created with xlsxwriter")
-                    
-                except ImportError:
-                    # Method 2: Fallback to openpyxl with better settings
-                    from openpyxl import Workbook
-                    from openpyxl.styles import NamedStyle
-                    from openpyxl.utils import get_column_letter
-                    
-                    wb = Workbook()
-                    ws = wb.active
-                    ws.title = "Telefon_Filtered"
-                    
-                    # Write header
-                    ws['A1'] = 'telefon'
-                    
-                    # Write phone numbers as text
-                    for row_idx, phone in enumerate(df['telefon'].values, 2):
-                        cell = ws.cell(row=row_idx, column=1, value=str(phone))
-                        cell.number_format = '@'  # Force text format
-                        cell.data_type = 's'  # String data type
-                    
-                    # Set column width and format
-                    ws.column_dimensions['A'].width = 20
-                    
-                    # Save with specific options
-                    wb.save(xlsx_path)
-                    wb.close()
-                    
-                    self.log(f"   ✓ Excel file created with openpyxl")
+            if split_size > 0:
+                self.log(f"   Splitting output into chunks of {split_size:,} rows.")
+                self.stats['output_format'] = 'zip'
                 
-                # Verify Excel file was created
-                if Path(xlsx_path).exists() and Path(xlsx_path).stat().st_size > 0:
-                    xlsx_size = Path(xlsx_path).stat().st_size
-                    self.log(f"   ✓ Excel file verified ({xlsx_size} bytes)")
-                else:
-                    raise Exception("Excel file verification failed")
-                    
-            except Exception as excel_error:
-                self.log(f"   ⚠️ Excel creation failed: {excel_error}")
-                # If Excel fails, just keep the CSV
-                if Path(xlsx_path).exists():
-                    Path(xlsx_path).unlink()  # Remove partial/corrupt file
-                self.log(f"   ✓ CSV file still available as fallback")
+                zip_path_csv = f"{base_path}_csv.zip"
+                zip_path_xlsx = f"{base_path}_xlsx.zip"
+                
+                self.stats['output_files'] = {
+                    'csv': Path(zip_path_csv).name,
+                    'xlsx': Path(zip_path_xlsx).name
+                }
+
+                # --- Create CSV Zip ---
+                self.log(f"   Creating CSV zip: {zip_path_csv}")
+                with zipfile.ZipFile(zip_path_csv, 'w', zipfile.ZIP_DEFLATED) as zipf_csv:
+                    for i, (start, end) in enumerate(range(0, len(final_df), split_size)):
+                        df_chunk = final_df.iloc[start:end + split_size]
+                        part_num = i + 1
+                        chunk_csv_name = f"filtered_part_{part_num}.csv"
+                        self.log(f"     ...writing {chunk_csv_name} ({len(df_chunk):,} rows)")
+                        csv_data = df_chunk.to_csv(index=False, encoding='utf-8', lineterminator='\n')
+                        zipf_csv.writestr(chunk_csv_name, csv_data)
+                
+                # --- Create Excel Zip ---
+                self.log(f"   Creating Excel zip: {zip_path_xlsx}")
+                with zipfile.ZipFile(zip_path_xlsx, 'w', zipfile.ZIP_DEFLATED) as zipf_xlsx:
+                    for i, (start, end) in enumerate(range(0, len(final_df), split_size)):
+                        df_chunk = final_df.iloc[start:end + split_size]
+                        part_num = i + 1
+                        chunk_xlsx_name = f"filtered_part_{part_num}.xlsx"
+                        self.log(f"     ...writing {chunk_xlsx_name} ({len(df_chunk):,} rows)")
+                        
+                        # Write to in-memory buffer
+                        with io.BytesIO() as excel_buffer:
+                            with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                                df_chunk.to_excel(writer, sheet_name='Telefon_Filtered', index=False)
+                            # Get buffer value before it's closed
+                            excel_data = excel_buffer.getvalue()
+                        
+                        zipf_xlsx.writestr(chunk_xlsx_name, excel_data)
+
+            else:
+                self.log("   Creating single CSV and Excel files.")
+                self.stats['output_format'] = 'single'
+                
+                csv_path = f"{base_path}.csv"
+                xlsx_path = f"{base_path}.xlsx"
+                
+                self.stats['output_files'] = {
+                    'csv': Path(csv_path).name,
+                    'xlsx': Path(xlsx_path).name
+                }
+
+                # 1. Create CSV
+                final_df.to_csv(csv_path, index=False, encoding='utf-8', lineterminator='\n')
+                self.log(f"   ✓ CSV file created: {csv_path}")
+
+                # 2. Create Excel
+                try:
+
+                    with pd.ExcelWriter(xlsx_path, engine='xlsxwriter',
+                                        options={'strings_to_numbers': False}) as writer:
+                        final_df.to_excel(writer, sheet_name='Telefon_Filtered', index=False)
+                    self.log(f"   ✓ Excel file created: {xlsx_path}")
+                except ImportError:
+                    # Fallback to openpyxl
+                    final_df.to_excel(xlsx_path, sheet_name='Telefon_Filtered', index=False)
+                    self.log(f"   ✓ Excel file created (openpyxl): {xlsx_path}")
             
-            # Always return True if at least CSV was created
             self.log("✓ Export complete.")
             return True
-        
+
         except Exception as e:
             self.log(f"Error exporting file: {e}")
             import traceback
             if not self.json_output:
                 traceback.print_exc()
             return False
+    # --- END MODIFIED FUNCTION ---
 
 def main():
     parser = argparse.ArgumentParser(description='Process phone numbers against a blocklist (API version).')
     parser.add_argument('input_file', help='Path to the input CSV or Excel file.')
-    parser.add_argument('-o', '--output', default='filtered_output.xlsx', help='Path for the output file (.xlsx or .csv).')
+    parser.add_argument('-o', '--output', default='filtered_output', help='Base path for the output file(s) (no extension).')
     parser.add_argument('--phone-column', required=True, help='Name of the phone number column.')
     parser.add_argument('--json-output', action='store_true', help='Output statistics as JSON for API consumption.')
+    # --- ADDED ARGUMENTS ---
+    parser.add_argument('--strip-plus', action='store_true', help='Remove the "+" prefix from output phone numbers.')
+    parser.add_argument('--split-size', type=int, default=0, help='Split output into chunks of this size. 0 means no splitting.')
+    # --- END ADDED ARGUMENTS ---
     
     args = parser.parse_args()
     
@@ -359,7 +368,8 @@ def main():
     
     filtered_df = processor.process_file(df, matched_column)
     
-    if processor.export_file(filtered_df, args.output):
+    # --- PASS NEW ARGS TO EXPORT ---
+    if processor.export_file(filtered_df, args.output, args.strip_plus, args.split_size):
         if args.json_output:
             # Output JSON statistics for the API
             print(json.dumps(processor.stats))
@@ -367,7 +377,7 @@ def main():
             processor.log(f"\n🎉 PROCESS COMPLETED SUCCESSFULLY!")
             processor.log("-" * 60)
             processor.log(f"   Input file: {args.input_file}")
-            processor.log(f"   Output file: {args.output}")
+            processor.log(f"   Output file(s) base: {args.output}")
             processor.log(f"   Unique phone numbers: {processor.stats['final_rows']:,}")
             processor.log("=" * 60)
     else:

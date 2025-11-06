@@ -1,3 +1,4 @@
+// src/components/ColumnSelector.tsx
 'use client'
 
 import React, { useState } from 'react'
@@ -6,15 +7,36 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { FileData } from '@/types'
+// --- We'll use these for the checkboxes ---
+// (Assuming you have these components from shadcn/ui, if not, replace with standard HTML)
+// Since checkbox.tsx isn't provided, I will use standard HTML <input type="checkbox">
+// import { Checkbox } from "@/components/ui/checkbox" 
+// import { Label } from "@/components/ui/label"
 
 interface ColumnSelectorProps {
   fileData: FileData | null
   selectedColumn?: string
   onColumnSelect: (column: string) => void
   onBack: () => void
+  // --- ADDED PROPS ---
+  stripPlus: boolean
+  onStripPlusChange: (checked: boolean) => void
+  splitFiles: boolean
+  onSplitFilesChange: (checked: boolean) => void
+  // --- END ADDED PROPS ---
 }
 
-export default function ColumnSelector({ fileData, selectedColumn: propSelectedColumn, onColumnSelect, onBack }: ColumnSelectorProps) {
+export default function ColumnSelector({ 
+  fileData, 
+  selectedColumn: propSelectedColumn, 
+  onColumnSelect, 
+  onBack,
+  // --- DESTRUCTURE NEW PROPS ---
+  stripPlus,
+  onStripPlusChange,
+  splitFiles,
+  onSplitFilesChange
+}: ColumnSelectorProps) {
   const [selectedColumn, setSelectedColumn] = useState<string>(propSelectedColumn || '')
   const [showPreview, setShowPreview] = useState(false)
 
@@ -211,6 +233,41 @@ export default function ColumnSelector({ fileData, selectedColumn: propSelectedC
                     </span>
                   </div>
                 </div>
+
+                {/* --- ADDED OPTIONS --- */}
+                <div className="space-y-3 mt-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="strip-plus"
+                      checked={stripPlus}
+                      onChange={(e) => onStripPlusChange(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <label
+                      htmlFor="strip-plus"
+                      className="text-sm font-medium text-gray-700"
+                    >
+                      Remove &quot;+&quot; from phone numbers
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="split-files"
+                      checked={splitFiles}
+                      onChange={(e) => onSplitFilesChange(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <label
+                      htmlFor="split-files"
+                      className="text-sm font-medium text-gray-700"
+                    >
+                      Split output into files of 50k
+                    </label>
+                  </div>
+                </div>
+                {/* --- END ADDED OPTIONS --- */}
                 
                 <Button
                   onClick={handleConfirmSelection}

@@ -1,3 +1,4 @@
+// src/app/api/process/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import path from 'path'
@@ -12,12 +13,19 @@ interface ProcessingStats {
   blocklist_size: number
   processing_time: number
   duplicates_removed?: number
+  // --- EXPECT NEW STATS ---
+  output_format?: 'single' | 'zip'
+  output_files?: { [key: string]: string }
+  // --- END EXPECT NEW STATS ---
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { fileId, phoneColumn } = body
+    // --- RECEIVE NEW OPTIONS ---
+    const { fileId, phoneColumn, stripPlus, splitFiles } = body
+    const splitSize = splitFiles ? 50000 : 0
+    // --- END RECEIVE NEW OPTIONS ---
 
     if (!fileId || !phoneColumn) {
       return NextResponse.json(
@@ -46,9 +54,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate output file path
+    // Generate output file path (base name, without extension)
     const processedFileId = uuidv4()
-    const outputFilePath = path.join(uploadsDir, `${processedFileId}_processed.xlsx`)
+    const outputFilePath = path.join(uploadsDir, `${processedFileId}_processed`) // No extension
 
     // Python script path
     const pythonScriptPath = path.join(process.cwd(), 'python_scripts', 'phone_processor_api.py')
@@ -63,18 +71,29 @@ export async function POST(request: NextRequest) {
     // Determine Python command
     const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
 
+    // --- BUILD PYTHON ARGUMENTS ---
+    const pythonArgs = [
+      pythonScriptPath,
+      inputFilePath,
+      '--output', outputFilePath,
+      '--phone-column', phoneColumn,
+      '--json-output',
+      '--split-size', String(splitSize) // Pass split size
+    ]
+
+    if (stripPlus) {
+      pythonArgs.push('--strip-plus') // Add strip-plus flag if true
+    }
+    // --- END BUILD PYTHON ARGUMENTS ---
+
+
     // Execute Python script
     console.log('Starting Python execution at:', new Date().toISOString())
     const startTime = Date.now()
     
     const stats = await new Promise<ProcessingStats>((resolve, reject) => {
-      const pythonProcess = spawn(pythonCommand, [
-        pythonScriptPath,
-        inputFilePath,
-        '--output', outputFilePath,
-        '--phone-column', phoneColumn,
-        '--json-output'
-      ])
+      // --- Use new args list ---
+      const pythonProcess = spawn(pythonCommand, pythonArgs)
 
       let stdout = ''
       let stderr = ''
@@ -125,9 +144,12 @@ export async function POST(request: NextRequest) {
 
     console.log('Total API processing time:', Date.now() - startTime + 'ms')
 
+    // --- STATS OBJECT IS NOW PASSED-THROUGH FROM PYTHON ---
+    // It will contain the new 'output_format' field
     const response = {
       success: true,
       stats: {
+        ...stats, // Pass all stats from Python
         totalRows: stats.total_rows,
         validNumbers: stats.valid_numbers,
         blockedNumbers: stats.blocked_numbers,
@@ -138,6 +160,7 @@ export async function POST(request: NextRequest) {
       },
       processedFileId
     }
+    // --- END STATS OBJECT ---
 
     return NextResponse.json(response)
 

@@ -133,6 +133,9 @@ export async function POST(request: NextRequest) {
             reject(new Error(`Failed to parse Python output: ${parseError}`))
           }
         } else {
+          console.error('Python execution failed with code:', code)
+          console.error('Python stderr:', stderr)
+          console.error('Python stdout:', stdout)
           reject(new Error(`Python script failed with code ${code}${stderr ? ': ' + stderr : ''}`))
         }
       })

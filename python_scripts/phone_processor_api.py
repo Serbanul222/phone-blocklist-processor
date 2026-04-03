@@ -185,15 +185,9 @@ class PhoneBlocklistProcessor:
         
         # Filter against blocklist - keep only numbers NOT in blocklist
         is_blocked = normalized_numbers.isin(self.blocklist)
-        filtered_numbers = normalized_numbers[~is_blocked & normalized_numbers.notna()]
         
-        # Create output DataFrame with only 'telefon' column
-        output_df = pd.DataFrame({
-            'telefon': filtered_numbers
-        })
-        
-        # Remove duplicates
-        output_df = output_df.drop_duplicates().reset_index(drop=True)
+        # Create output DataFrame keeping all original columns
+        output_df = df[~is_blocked].copy()
         
         total_rows = len(df)
         valid_normalized = normalized_numbers.notna().sum()
@@ -216,19 +210,19 @@ class PhoneBlocklistProcessor:
         else:
             self.log(f"   Valid, normalized numbers: 0")
         self.log(f"   Numbers found in blocklist (removed): {blocked_numbers:,}")
-        self.log(f"   Final unique phone numbers: {len(output_df):,}")
+        self.log(f"   Final rows remain: {len(output_df):,}")
 
         return output_df
 
     # --- MODIFIED EXPORT FUNCTION ---
-    def export_file(self, df: pd.DataFrame, output_path: str, strip_plus: bool, split_size: int) -> bool:
+    def export_file(self, df: pd.DataFrame, output_path: str, strip_plus: bool, split_size: int, phone_col: str) -> bool:
         """
         Export the DataFrame.
         - If split_size > 0, creates .zip files with chunks.
         - If split_size == 0, creates single .csv and .xlsx files.
-        - If strip_plus is True, removes '+' from 'telefon' column.
+        - If strip_plus is True, removes '+' from phone column.
         """
-        self.log(f"\n💾 Exporting {len(df):,} unique phone numbers...")
+        self.log(f"\n💾 Exporting {len(df):,} rows...")
         
         base_path = str(Path(output_path).with_suffix(''))
         
@@ -236,8 +230,8 @@ class PhoneBlocklistProcessor:
         final_df = df.copy()
         
         if strip_plus:
-            self.log("   Stripping '+' from phone numbers.")
-            final_df['telefon'] = final_df['telefon'].str.replace('+', '', regex=False)
+            self.log(f"   Stripping '+' from phone numbers in '{phone_col}'.")
+            final_df[phone_col] = final_df[phone_col].astype(str).str.replace('+', '', regex=False)
 
         try:
             if split_size > 0:
@@ -301,7 +295,7 @@ class PhoneBlocklistProcessor:
                 try:
 
                     with pd.ExcelWriter(xlsx_path, engine='xlsxwriter',
-                                        options={'strings_to_numbers': False}) as writer:
+                                        engine_kwargs={'options': {'strings_to_numbers': False}}) as writer:
                         final_df.to_excel(writer, sheet_name='Telefon_Filtered', index=False)
                     self.log(f"   ✓ Excel file created: {xlsx_path}")
                 except ImportError:
@@ -315,8 +309,7 @@ class PhoneBlocklistProcessor:
         except Exception as e:
             self.log(f"Error exporting file: {e}")
             import traceback
-            if not self.json_output:
-                traceback.print_exc()
+            traceback.print_exc(file=sys.stderr)
             return False
     # --- END MODIFIED FUNCTION ---
 
@@ -369,7 +362,7 @@ def main():
     filtered_df = processor.process_file(df, matched_column)
     
     # --- PASS NEW ARGS TO EXPORT ---
-    if processor.export_file(filtered_df, args.output, args.strip_plus, args.split_size):
+    if processor.export_file(filtered_df, args.output, args.strip_plus, args.split_size, matched_column):
         if args.json_output:
             # Output JSON statistics for the API
             print(json.dumps(processor.stats))
@@ -378,7 +371,7 @@ def main():
             processor.log("-" * 60)
             processor.log(f"   Input file: {args.input_file}")
             processor.log(f"   Output file(s) base: {args.output}")
-            processor.log(f"   Unique phone numbers: {processor.stats['final_rows']:,}")
+            processor.log(f"   Final rows exported: {processor.stats['final_rows']:,}")
             processor.log("=" * 60)
     else:
         sys.exit(1)

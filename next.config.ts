@@ -3,11 +3,15 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   // Enable standalone output for Docker
   output: 'standalone',
-  
+
+  // FIX: 'serverComponentsExternalPackages' was moved out of 'experimental'
+  // and renamed to 'serverExternalPackages'.
+  serverExternalPackages: ['xlsx'],
+
   experimental: {
-    serverComponentsExternalPackages: ['xlsx']
+    // This key is no longer needed here
   },
-  
+
   webpack: (config) => {
     config.externals.push({
       'utf-8-validate': 'commonjs utf-8-validate',
@@ -15,7 +19,7 @@ const nextConfig: NextConfig = {
     })
     return config
   },
-  
+
   // Security headers
   async headers() {
     return [
@@ -38,14 +42,14 @@ const nextConfig: NextConfig = {
       }
     ]
   },
-  
+
   // Optimize for production
   poweredByHeader: false,
   generateEtags: false,
-  
+
   // Enable compression
   compress: true,
-  
+
   // Custom server configuration
   serverRuntimeConfig: {
     maxDuration: 300 // 5 minutes for API routes

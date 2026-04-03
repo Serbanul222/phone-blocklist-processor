@@ -12,7 +12,7 @@ COPY . .
 
 # Install dependencies
 RUN npm install
-RUN pip3 install --break-system-packages openpyxl tqdm
+RUN pip3 install --break-system-packages openpyxl tqdm xlsxwriter
 
 # Build and run
 RUN npm run build
